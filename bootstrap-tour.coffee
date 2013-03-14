@@ -33,6 +33,7 @@
         useLocalStorage: false,
         afterSetState: (key, value) ->
         afterGetState: (key, value) ->
+        afterRemoveState: (key) ->
         onStart: (tour) ->
         onEnd: (tour) ->
         onShow: (tour) ->
@@ -42,22 +43,32 @@
 
       @_steps = []
       @setCurrentStep()
-
-      # Reshow popover on window resize using debounced resize
-      @_onresize(=> @showStep(@_current) unless @ended)
-
+    
+    # Set a state in localstorage or cookies. Setting to null deletes the state
     setState: (key, value) ->
+      key = "#{@_options.name}_#{key}"
       if this._options.useLocalStorage
-        window.localStorage.setItem("#{@_options.name}_#{key}", value)
+        window.localStorage.setItem(key, value)
       else
-        $.cookie("#{@_options.name}_#{key}", value, { expires: 36500, path: '/' })
+        $.cookie(key, value, { expires: 36500, path: '/' })
       @_options.afterSetState(key, value)
+
+    removeState: (key) ->
+      key = "#{@_options.name}_#{key}"
+      if this._options.useLocalStorage
+        window.localStorage.removeItem(key)
+      else
+        $.removeCookie(key, { path: '/' })
+      @_options.afterRemoveState(key)
 
     getState: (key) ->
       if this._options.useLocalStorage
         value = window.localStorage.getItem("#{@_options.name}_#{key}")
       else
         value = $.cookie("#{@_options.name}_#{key}")
+
+      value = null if value == undefined || value == "null"
+
       @_options.afterGetState(key, value)
       return value
 
@@ -99,29 +110,36 @@
         e.preventDefault()
         @end()
 
+      # Reshow popover on window resize using debounced resize
+      @_onresize(=> @showStep(@_current))
+
       @_setupKeyboardNavigation()
 
-      @_options.onStart(@) if @_options.onStart?
-
-      @showStep(@_current)
+      promise = @_makePromise(@_options.onStart(@) if @_options.onStart?)
+      @_callOnPromiseDone(promise, @showStep, @_current)
 
     # Hide current step and show next step
     next: ->
-      @hideStep(@_current)
-      @showNextStep()
+      promise = @hideStep(@_current)
+      @_callOnPromiseDone(promise, @showNextStep)
 
     # Hide current step and show prev step
     prev: ->
-      @hideStep(@_current)
-      @showPrevStep()
+      promise = @hideStep(@_current)
+
 
     # End tour
     end: ->
-      @hideStep(@_current)
-      $(document).off ".bootstrap-tour"
-      @setState("end", "yes")
+      endHelper = (e) =>
+        $(document).off "click.bootstrap-tour"
+        $(document).off "keyup.bootstrap-tour"
+        $(window).off "resize.bootstrap-tour"
+        @setState("end", "yes")
 
-      @_options.onEnd(@) if @_options.onEnd?
+        @_options.onEnd(@) if @_options.onEnd?
+
+      hidePromise = @hideStep(@_current)
+      @_callOnPromiseDone(hidePromise, endHelper)
 
     # Verify if tour is enabled
     ended: ->
@@ -129,43 +147,55 @@
 
     # Restart tour
     restart: ->
-      @setState("current_step", null)
-      @setState("end", null)
+      @removeState("current_step")
+      @removeState("end")
       @setCurrentStep(0)
       @start()
 
     # Hide the specified step
     hideStep: (i) ->
       step = @getStep(i)
-      step.onHide(@) if step.onHide?
+      promise = @_makePromise (step.onHide(@) if step.onHide?)
 
-      $(step.element).popover("hide")
+      hideStepHelper = (e) =>
+        $element = $(step.element).popover("hide")
+        $element.css("cursor", "").off "click.boostrap-tour" if step.reflex
+
+      @_callOnPromiseDone(promise, hideStepHelper)
+
+      promise
 
     # Show the specified step
     showStep: (i) ->
       step = @getStep(i)
 
       return unless step
+      
+      # If onShow returns a promise, lets wait until it's done to execute
+      promise = @_makePromise (step.onShow(@) if step.onShow?)
 
-      @setCurrentStep(i)
+      showStepHelper = (e) =>
+        @setCurrentStep(i)
 
-      # Redirect to step path if not already there
-      # Compare to path, then filename
-      if step.path != "" && document.location.pathname != step.path && document.location.pathname.replace(/^.*[\\\/]/, '') != step.path
-        document.location.href = step.path
-        return
+        # Support string or function for path
+        path = if typeof step.path == "function" then step.path.call() else step.path
 
-      step.onShow(@) if step.onShow?
+        # Redirect to step path if not already there
+        if @_redirect(path, document.location.pathname)
+          document.location.href = path
+          return
 
-      # If step element is hidden, skip step
-      unless step.element? && $(step.element).length != 0 && $(step.element).is(":visible")
-        @showNextStep()
-        return
+        # If step element is hidden, skip step
+        unless step.element? && $(step.element).length != 0 && $(step.element).is(":visible")
+          @showNextStep()
+          return
 
-      # Show popover
-      @_showPopover(step, i)
+        # Show popover
+        @_showPopover(step, i)
+        step.onShown(@) if step.onShown?
+      
+      @_callOnPromiseDone(promise, showStepHelper)
 
-      step.onShown(@) if step.onShown?
 
     # Setup current step variable
     setCurrentStep: (value) ->
@@ -174,7 +204,7 @@
         @setState("current_step", value)
       else
         @_current = @getState("current_step")
-        if (@_current == null || @_current == "null")
+        if @_current == null
           @_current = 0
         else
           @_current = parseInt(@_current)
@@ -189,6 +219,11 @@
       step = @getStep(@_current)
       @showStep(step.prev)
 
+    # Check if step path equals current document path
+    _redirect: (path, currentPath) ->
+      path? and path isnt "" and
+        path.replace(/\?.*$/, "").replace(/\/?$/, "") isnt currentPath.replace(/\/?$/, "")
+
     # Show step popover
     _showPopover: (step, i) ->
       content = "#{step.content}<br /><p>"
@@ -198,9 +233,7 @@
       if step.options
         $.extend options, step.options
       if step.reflex
-        $(step.element).css "cursor", "pointer"
-        $(step.element).on "click", (e) =>
-          $(step.element).css "cursor", "auto"
+        $(step.element).css("cursor", "pointer").on "click.bootstrap-tour", (e) =>
           @next()
 
       nav = []
@@ -220,33 +253,53 @@
         content: content
         html: true
         animation: step.animation
+        container: "body"
       }).popover("show")
 
       tip = $(step.element).data("popover").tip()
-      @_reposition(tip)
+      @_reposition(tip, step)
       @_scrollIntoView(tip)
 
     # Prevent popups from crossing over the edge of the window
-    _reposition: (tip) ->
+    _reposition: (tip, step) ->
+      original_offsetWidth = tip[0].offsetWidth
+      original_offsetHeight = tip[0].offsetHeight
+
       tipOffset = tip.offset()
+      original_left = tipOffset.left
+      original_top = tipOffset.top
       offsetBottom = $(document).outerHeight() - tipOffset.top - $(tip).outerHeight()
       tipOffset.top = tipOffset.top + offsetBottom if offsetBottom < 0
-      offsetRight = $(document).outerWidth() - tipOffset.left - $(tip).outerWidth()
+      offsetRight = $("html").outerWidth() - tipOffset.left - $(tip).outerWidth()
       tipOffset.left = tipOffset.left + offsetRight if offsetRight < 0
 
       tipOffset.top = 0 if tipOffset.top < 0
       tipOffset.left = 0 if tipOffset.left < 0
+
       tip.offset(tipOffset)
+
+      # reposition the arrow
+      if step.placement == 'bottom' or step.placement == 'top'
+        @_replaceArrow(tip, (tipOffset.left-original_left)*2, original_offsetWidth, 'left') if original_left != tipOffset.left
+      else
+        @_replaceArrow(tip, (tipOffset.top-original_top)*2, original_offsetHeight, 'top') if original_top != tipOffset.top
+
+    # copy pasted from bootstrap-tooltip.js
+    # with some alterations
+    _replaceArrow: (tip, delta, dimension, position)->
+      tip
+        .find(".arrow")
+        .css(position, if delta then (50 * (1 - delta / dimension) + "%") else '')
 
     # Scroll to the popup if it is not in the viewport
     _scrollIntoView: (tip) ->
       tipRect = tip.get(0).getBoundingClientRect()
-      unless tipRect.top > 0 && tipRect.bottom < $(window).height() && tipRect.left > 0 && tipRect.right < $(window).width()
+      unless tipRect.top >= 0 && tipRect.bottom < $(window).height() && tipRect.left >= 0 && tipRect.right < $(window).width()
         tip.get(0).scrollIntoView(true)
 
     # Debounced window resize
     _onresize: (cb, timeout) ->
-      $(window).resize ->
+      $(window).on "resize.bootstrap-tour", ->
         clearTimeout(timeout)
         timeout = setTimeout(cb, 100)
 
@@ -265,6 +318,21 @@
               if @_current > 0
                 @prev()
 
+    # Checks if the result of a callback is a promise
+    _makePromise: (result) ->
+      if result && $.isFunction(result.then)
+        return result
+      else
+        return null
+
+    _callOnPromiseDone: (promise, cb, arg) ->
+      if promise
+        promise.then (e) =>
+          cb.call(@, arg)
+      else
+        cb.call(@, arg)
+
   window.Tour = Tour
 
 )(jQuery, window)
+

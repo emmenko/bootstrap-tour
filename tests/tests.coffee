@@ -301,3 +301,87 @@ test "Tour.showStep should show multiple step on the same element", ->
   strictEqual(@tour.getStep(0).element.data("popover").tip().filter(":visible").length, 1, "tour show the first step")
   @tour.showNextStep()
   strictEqual(@tour.getStep(1).element.data("popover").tip().filter(":visible").length, 1, "tour show the second step on the same element")
+
+test "Tour properly verify paths", ->
+  @tour = new Tour()
+
+  strictEqual(@tour._redirect(undefined, "/"), false, "don't redirect if no path")
+  strictEqual(@tour._redirect("", "/"), false, "don't redirect if path empty")
+  strictEqual(@tour._redirect("/somepath", "/somepath"), false, "don't redirect if path matches current path")
+  strictEqual(@tour._redirect("/somepath/", "/somepath"), false, "don't redirect if path with slash matches current path")
+  strictEqual(@tour._redirect("/somepath", "/somepath/"), false, "don't redirect if path matches current path with slash")
+  strictEqual(@tour._redirect("/somepath?search=true", "/somepath"), false, "don't redirect if path with query params matches current path")
+  strictEqual(@tour._redirect("/somepath/?search=true", "/somepath"), false, "don't redirect if path with slash and query params matches current path")
+  strictEqual(@tour._redirect("/anotherpath", "/somepath"), true, "redirect if path doesn't match current path")
+
+test "Tour.getState should return null after Tour.removeState with null value using cookies", ->
+  @tour = new Tour({useLocalStorage: false})
+  @tour.setState("test", "test")
+  @tour.removeState("test")
+  strictEqual(@tour.getState("test"), null, "tour returns null after null setState")
+
+test "Tour.getState should return null after Tour.removeState with null value using localStorage", ->
+  @tour = new Tour({useLocalStorage: true})
+  @tour.setState("test", "test")
+  @tour.removeState("test")
+  strictEqual(@tour.getState("test"), null, "tour returns null after null setState")
+
+test "Tour.removeState should call afterRemoveState callback", ->
+  sentinel = false
+  @tour = new Tour({afterRemoveState: -> sentinel = true})
+  @tour.removeState("current_step")
+  strictEqual(sentinel, true, "removeState calls callback")
+
+test "Tour shouldn't move to the next state until the onShow promise is resolved", ->
+  @tour = new Tour()
+  deferred = $.Deferred()
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture")})
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture"), onShow: -> return deferred})
+  @tour.start()
+  @tour.next()
+  strictEqual(@tour._current, 0, "tour shows old state until resolving of onShow promise")
+  deferred.resolve()
+  strictEqual(@tour._current, 1, "tour shows new state after resolving onShow promise")
+
+test "Tour shouldn't hide popover until the onHide promise is resolved", ->
+  @tour = new Tour()
+  deferred = $.Deferred()
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture"), onHide: -> return deferred})
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture")})
+  @tour.start()
+  @tour.next()
+  strictEqual(@tour._current, 0, "tour shows old state until resolving of onHide promise")
+  deferred.resolve()
+  strictEqual(@tour._current, 1, "tour shows new state after resolving onShow promise")
+
+test "Tour shouldn't start until the onStart promise is resolved", ->
+  deferred = $.Deferred()
+  @tour = new Tour({onStart: -> return deferred})
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture")})
+  @tour.start()
+  strictEqual($(".popover").length, 0, "Tour does not start before onStart promise is resolved")
+  deferred.resolve()
+  strictEqual($(".popover").length, 1, "Tour starts after onStart promise is resolved")
+
+test "Reflex parameter should change the element cursor to pointer when the step is displayed", ->
+  $element = $("<div></div>").appendTo("#qunit-fixture")
+  @tour = new Tour()
+  @tour.addStep({element: $element, reflex: true})
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture")})
+  strictEqual($element.css("cursor"), "auto", "Tour doesn't change the element cursor before displaying the step")
+  @tour.start()
+  strictEqual($element.css("cursor"), "pointer", "Tour change the element cursor to pointer when the step is displayed")
+  @tour.next()
+  strictEqual($element.css("cursor"), "auto", "Tour reset the element cursor when the step is hidden")
+
+test "Reflex parameter should change the element cursor to pointer when the step is displayed", ->
+  $element = $("<div></div>").appendTo("#qunit-fixture")
+  @tour = new Tour()
+  @tour.addStep({element: $element, reflex: true})
+  @tour.addStep({element: $("<div></div>").appendTo("#qunit-fixture")})
+  strictEqual($element.css("cursor"), "auto", "Tour doesn't change the element cursor before displaying the step")
+  @tour.start()
+  strictEqual($element.css("cursor"), "pointer", "Tour change the element cursor to pointer when the step is displayed")
+  @tour.next()
+  strictEqual($element.css("cursor"), "auto", "Tour reset the element cursor when the step is hidden")
+
