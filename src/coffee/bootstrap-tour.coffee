@@ -41,11 +41,6 @@
         backdrop: false
         redirect: true
         basePath: ''
-        retryStep: {
-          active: false
-          times: 1
-          delay: 100
-        }
         afterSetState: (key, value) ->
         afterGetState: (key, value) ->
         afterRemoveState: (key) ->
@@ -120,7 +115,6 @@
         next: if i == @_steps.length - 1 then -1 else i + 1
         prev: i - 1
         animation: true
-        retryStep: @_options.retryStep
         backdrop: @_options.backdrop
         redirect: @_options.redirect
         onShow: @_options.onShow
@@ -231,48 +225,20 @@
           @_redirect(step, path)
           return
 
-        checkAndShowStepHelper = (isVisible) =>
-          unless not isVisible
-            @showNextStep()
-            return
+        # If step element is hidden, skip step
+        unless step.element? && $(step.element).length != 0 && $(step.element).is(":visible")
+          @_debug "Skip the step #{@_current + 1}. The element does not exist or is not visible."
+          @showNextStep()
+          return
 
-          @_showBackdrop(step.element) if step.backdrop
+        @_showBackdrop(step.element) if step.backdrop
 
-          # Show popover
-          @_showPopover(step, i)
-          step.onShown(@) if step.onShown?
-          @_debug "Step #{@_current + 1} of #{@_steps.length}"
-
-        @_isStepVisible(step, checkAndShowStepHelper)
+        # Show popover
+        @_showPopover(step, i)
+        step.onShown(@) if step.onShown?
+        @_debug "Step #{@_current + 1} of #{@_steps.length}"
 
       @_callOnPromiseDone(promise, showStepHelper)
-
-    _isStepVisible: (step, cb)->
-      # If step element is hidden, skip step
-      isVisible = -> step.element? && $(step.element).length != 0 && $(step.element).is(":visible")
-      if isVisible()
-        cb.call(@, true)
-      else
-        @_debug "Skip the step #{@_current + 1}. The element does not exist or is not visible."
-        # Wait and retry to show step, if enabled
-        if step.retryStep.active
-          times = step.retryStep.times #or 1 if not _.isNumber step.retryStep.times
-          delay = step.retryStep.delay
-
-          counter = 0
-          interval = setInterval(checkVisibility, delay)
-          checkVisibility = ->
-            if counter < times
-              if isVisible()
-                cb.call(@, true)
-                return
-              else
-                counter++
-            else
-              clearInterval(interval)
-              cb.call(@, false)
-        else
-          cb.call(@, false)
 
     # Setup current step variable
     setCurrentStep: (value) ->
@@ -494,4 +460,3 @@
   window.Tour = Tour
 
 )(jQuery, window)
-

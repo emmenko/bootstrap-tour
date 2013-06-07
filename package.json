@@ -7,8 +7,12 @@
     "type": "git",
     "url": "https://github.com/sorich87/bootstrap-tour.git"
   },
-  "dependencies": {
-    "bootstrap": "2.3.1",
-    "jquery": "~1.8.0"
+  "devDependencies": {
+    "uglify-js": "*",
+    "less": "*",
+    "mocha-phantomjs": "*",
+    "mocha": "1.9.0",
+    "chai": "1.6.x",
+    "coffee-script": "*"
   }
 }

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../node_modules/mocha/mocha.css" />
+    <link rel="stylesheet" href="../deps/bootstrap.min.css" />
+    <link rel="stylesheet" href="../build/css/bootstrap-tour.min.css" />
+    <style type="text/css">
+      /* Helper class to minimize css3 transition effects for testing */
+      .no-transition {
+        -webkit-transition: height 0.001s;
+        -moz-transition: height 0.001s;
+        -ms-transition: height 0.001s;
+        -o-transition: height 0.001s;
+        transition: height 0.001s;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mocha"></div>
+    <div id="container"></div>
+    <script src="../node_modules/mocha/mocha.js"></script>
+    <script src="../node_modules/chai/chai.js"></script>
+    <script>
+      mocha.ui('bdd');
+      suite = describe;
+      test = it;
+      mocha.reporter('html');
+      expect = chai.expect;
+      assert = chai.assert;
+    </script>
+    <script src="../deps/jquery.js"></script>
+    <script src="../deps/jquery.cookie.js"></script>
+    <script src="../deps/bootstrap.min.js"></script>
+    <script src="../build/js/bootstrap-tour.min.js"></script>
+    <script src="test.js"></script>
+    <script>
+      if (window.mochaPhantomJS) { mochaPhantomJS.run(); }
+      else { mocha.run(); }
+    </script>
+  </body>
+</html>
